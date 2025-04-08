@@ -41,8 +41,8 @@ func TestLimit(t *testing.T) {
 			}
 			assert.LessOrEqual(t, atomic.AddInt32(&running, 1), int32(max))
 			time.Sleep(sleep)
-			done.Done()
 			assert.GreaterOrEqual(t, atomic.AddInt32(&running, -1), int32(0))
+			done.Done()
 		}()
 	}
 	wg.Wait()
