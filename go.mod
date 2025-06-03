@@ -3,7 +3,7 @@ module github.com/singlestore-labs/simultaneous
 go 1.20
 
 require (
-	github.com/memsql/errors v0.1.0
+	github.com/memsql/errors v0.2.0
 	github.com/stretchr/testify v1.10.0
 )
 
