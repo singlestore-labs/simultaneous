@@ -1,6 +1,7 @@
 package simultaneous_test
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -38,12 +39,12 @@ func testLimit(t *testing.T, withStuck bool) {
 
 	if withStuck {
 		limit = limit.SetForeverMessaging(time.Millisecond,
-			func() {
+			func(context.Context) {
 				if stuckCalled.Add(1) == 1 {
 					close(someUnstuck)
 				}
 			},
-			func() {
+			func(context.Context) {
 				unstuckCalled.Add(1)
 			},
 		)
@@ -58,12 +59,12 @@ func testLimit(t *testing.T, withStuck bool) {
 		go func() {
 			defer wg.Done()
 			var done simultaneous.Limited[any]
-			switch i % 3 {
+			switch i % 4 {
 			case 0:
-				done = limit.Forever()
+				done = limit.Forever(context.Background())
 			case 1:
 				var err error
-				done, err = limit.Timeout(0)
+				done, err = limit.Timeout(context.Background(), 0)
 				if err != nil {
 					fail.Add(1)
 					return
@@ -72,7 +73,15 @@ func testLimit(t *testing.T, withStuck bool) {
 				}
 			case 2:
 				var err error
-				done, err = limit.Timeout(time.Second * 2)
+				done, err = limit.Timeout(context.Background(), time.Second*2)
+				if !assert.NoError(t, err) {
+					return
+				}
+			case 3:
+				var err error
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
+				t.Cleanup(cancel)
+				done, err = limit.Timeout(ctx, time.Hour)
 				if !assert.NoError(t, err) {
 					return
 				}
