@@ -3,6 +3,7 @@ package simultaneous_test
 // This generated with Claude 3.7 Sonnet
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -16,17 +17,17 @@ func TestTimeoutRejection(t *testing.T) {
 	limit := simultaneous.New[any](1)
 
 	// Take the only available slot
-	done := limit.Forever()
+	done := limit.Forever(context.Background())
 	defer done.Done()
 
 	// This should time out immediately
-	_, err := limit.Timeout(0)
+	_, err := limit.Timeout(context.Background(), 0)
 	assert.Error(t, err)
 	t.Log("Timeout(0) correctly rejected when limit is full")
 
 	// This should time out after a short wait
 	start := time.Now()
-	_, err = limit.Timeout(50 * time.Millisecond)
+	_, err = limit.Timeout(context.Background(), 50*time.Millisecond)
 	duration := time.Since(start)
 
 	assert.Error(t, err)
