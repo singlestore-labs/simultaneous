@@ -50,8 +50,8 @@ func Unlimited[T any]() Enforced[T] {
 }
 
 // Forever waits until there is space in the Limit for another
-// simultaneous runner. It will wait until the context is
-// cancelled.  The Done() method
+// simultaneous runner. It will wait for space in the limit, or until
+// the context is cancelled. The Done() method
 // must be called to release the space.
 //
 //	defer limit.Forever().Done()
