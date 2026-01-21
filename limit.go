@@ -5,6 +5,7 @@ need a limit.
 package simultaneous
 
 import (
+	"context"
 	"time"
 
 	"github.com/memsql/errors"
@@ -28,8 +29,8 @@ type Enforced[T any] interface {
 // contract.
 type Limit[T any] struct {
 	queue           chan struct{}
-	stuckCallback   func()
-	unstuckCallback func()
+	stuckCallback   func(context.Context)
+	unstuckCallback func(context.Context)
 	stuckTimeout    time.Duration
 }
 
@@ -49,25 +50,43 @@ func Unlimited[T any]() Enforced[T] {
 }
 
 // Forever waits until there is space in the Limit for another
-// simultaneous runner. It will wait forever. The Done() method
+// simultaneous runner. It will wait for space in the limit, or until
+// the context is cancelled. The Done() method
 // must be called to release the space.
 //
 //	defer limit.Forever().Done()
-func (l *Limit[T]) Forever() Limited[T] {
+//
+// If the context is cancelled, Forever returns regardless of space
+// in the Limit.
+func (l *Limit[T]) Forever(ctx context.Context) Limited[T] {
 	if l.stuckTimeout == 0 {
-		l.queue <- struct{}{}
+		select {
+		case l.queue <- struct{}{}:
+		case <-ctx.Done():
+			return limited[T](func() {})
+		}
 	} else {
 		timer := time.NewTimer(l.stuckTimeout)
 		select {
 		case l.queue <- struct{}{}:
 			timer.Stop()
+		case <-ctx.Done():
+			timer.Stop()
+			return limited[T](func() {})
 		case <-timer.C:
 			if l.stuckCallback != nil {
-				l.stuckCallback()
+				l.stuckCallback(ctx)
 			}
-			l.queue <- struct{}{}
-			if l.unstuckCallback != nil {
-				l.unstuckCallback()
+			select {
+			case l.queue <- struct{}{}:
+				if l.unstuckCallback != nil {
+					l.unstuckCallback(ctx)
+				}
+			case <-ctx.Done():
+				if l.unstuckCallback != nil {
+					l.unstuckCallback(ctx)
+				}
+				return limited[T](func() {})
 			}
 		}
 	}
@@ -81,14 +100,19 @@ var ErrTimeout errors.String = "could not get permission to run before timeout"
 // Timeout waits for a limited time for there to be space for another
 // simultaneous runner. In the case of a timeout, ErrTimeout is returned
 // and the Done method is a no-op. If there is room, the Done method must
-// be invoked to make room for another runner.
-func (l *Limit[T]) Timeout(timeout time.Duration) (Limited[T], error) {
+// be invoked to make room for another runner. If the provided context is
+// cancelled before space becomes available or the timeout elapses, Timeout
+// will return early with an error wrapping ctx.Err(), and the returned
+// Limited's Done method will also be a no-op.
+func (l *Limit[T]) Timeout(ctx context.Context, timeout time.Duration) (Limited[T], error) {
 	if timeout <= 0 {
 		select {
 		case l.queue <- struct{}{}:
 			return limited[T](func() {
 				<-l.queue
 			}), nil
+		case <-ctx.Done():
+			return limited[T](nil), errors.Wrapf(ctx.Err(), "context cancelled before any simultaneous runner (of %d) became available", cap(l.queue))
 		default:
 			return limited[T](nil), ErrTimeout.Errorf("timeout (%s) expired before any simultaneous runner (of %d) became available", timeout, cap(l.queue))
 		}
@@ -100,6 +124,9 @@ func (l *Limit[T]) Timeout(timeout time.Duration) (Limited[T], error) {
 		return limited[T](func() {
 			<-l.queue
 		}), nil
+	case <-ctx.Done():
+		timer.Stop()
+		return limited[T](nil), errors.Wrapf(ctx.Err(), "context cancelled before any simultaneous runner (of %d) became available", cap(l.queue))
 	case <-timer.C:
 		return limited[T](nil), ErrTimeout.Errorf("timeout (%s) expired before any simultaneous runner (of %d) became available", timeout, cap(l.queue))
 	}
@@ -107,8 +134,12 @@ func (l *Limit[T]) Timeout(timeout time.Duration) (Limited[T], error) {
 
 // SetForeverMessaging returns a modified Limit that changes the behavior of Forever() so that
 // it will call stuckCallback() (if set) after waiting for stuckTimeout duration. If past that duration,
-// and it will call unstuckCallback() (if set) when it finally gets a limit.
-func (l Limit[T]) SetForeverMessaging(stuckTimeout time.Duration, stuckCallback func(), unstuckCallback func()) *Limit[T] {
+// and it will call unstuckCallback() (if set) when it finally gets a limit or if the context
+// is cancelled.
+//
+// The anticipated use of the callbacks is logging. They don't return error and if they panic,
+// it won't be caught by the simultaneous package.
+func (l Limit[T]) SetForeverMessaging(stuckTimeout time.Duration, stuckCallback func(context.Context), unstuckCallback func(context.Context)) *Limit[T] {
 	l.stuckTimeout = stuckTimeout
 	l.stuckCallback = stuckCallback
 	l.unstuckCallback = unstuckCallback
