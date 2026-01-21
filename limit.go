@@ -100,7 +100,10 @@ var ErrTimeout errors.String = "could not get permission to run before timeout"
 // Timeout waits for a limited time for there to be space for another
 // simultaneous runner. In the case of a timeout, ErrTimeout is returned
 // and the Done method is a no-op. If there is room, the Done method must
-// be invoked to make room for another runner.
+// be invoked to make room for another runner. If the provided context is
+// cancelled before space becomes available or the timeout elapses, Timeout
+// will return early with an error wrapping ctx.Err(), and the returned
+// Limited's Done method will also be a no-op.
 func (l *Limit[T]) Timeout(ctx context.Context, timeout time.Duration) (Limited[T], error) {
 	if timeout <= 0 {
 		select {
