@@ -131,7 +131,11 @@ func (l *Limit[T]) Timeout(ctx context.Context, timeout time.Duration) (Limited[
 
 // SetForeverMessaging returns a modified Limit that changes the behavior of Forever() so that
 // it will call stuckCallback() (if set) after waiting for stuckTimeout duration. If past that duration,
-// and it will call unstuckCallback() (if set) when it finally gets a limit.
+// and it will call unstuckCallback() (if set) when it finally gets a limit or if the context
+// is cancelled.
+//
+// The anticipated use of the callbacks is logging. They don't return error and if they panic,
+// it won't be caught by the simultaneous package.
 func (l Limit[T]) SetForeverMessaging(stuckTimeout time.Duration, stuckCallback func(context.Context), unstuckCallback func(context.Context)) *Limit[T] {
 	l.stuckTimeout = stuckTimeout
 	l.stuckCallback = stuckCallback
