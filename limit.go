@@ -83,6 +83,9 @@ func (l *Limit[T]) Forever(ctx context.Context) Limited[T] {
 					l.unstuckCallback(ctx)
 				}
 			case <-ctx.Done():
+				if l.unstuckCallback != nil {
+					l.unstuckCallback(ctx)
+				}
 				return limited[T](func() {})
 			}
 		}
