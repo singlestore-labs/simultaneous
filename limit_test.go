@@ -80,7 +80,7 @@ func testLimit(t *testing.T, withStuck bool) {
 			case 3:
 				var err error
 				ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
-				t.Cleanup(cancel)
+				defer cancel()
 				done, err = limit.Timeout(ctx, time.Hour)
 				if !assert.NoError(t, err) {
 					return

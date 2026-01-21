@@ -55,17 +55,24 @@ func Unlimited[T any]() Enforced[T] {
 // must be called to release the space.
 //
 //	defer limit.Forever().Done()
+//
+// If the context is cancelled, Forever returns regardless of space
+// in the Limit.
 func (l *Limit[T]) Forever(ctx context.Context) Limited[T] {
 	if l.stuckTimeout == 0 {
-		l.queue <- struct{}{}
+		select {
+		case l.queue <- struct{}{}:
+		case <-ctx.Done():
+			return limited[T](func() {})
+		}
 	} else {
 		timer := time.NewTimer(l.stuckTimeout)
 		select {
 		case l.queue <- struct{}{}:
 			timer.Stop()
 		case <-ctx.Done():
-			return limited[T](func() {})
 			timer.Stop()
+			return limited[T](func() {})
 		case <-timer.C:
 			if l.stuckCallback != nil {
 				l.stuckCallback(ctx)
@@ -99,7 +106,7 @@ func (l *Limit[T]) Timeout(ctx context.Context, timeout time.Duration) (Limited[
 				<-l.queue
 			}), nil
 		case <-ctx.Done():
-			return limited[T](nil), ErrTimeout.Errorf("context cancelled before any simultaneous runner (of %d) became available", cap(l.queue))
+			return limited[T](nil), errors.Wrapf(ctx.Err(), "context cancelled before any simultaneous runner (of %d) became available", cap(l.queue))
 		default:
 			return limited[T](nil), ErrTimeout.Errorf("timeout (%s) expired before any simultaneous runner (of %d) became available", timeout, cap(l.queue))
 		}
@@ -112,7 +119,8 @@ func (l *Limit[T]) Timeout(ctx context.Context, timeout time.Duration) (Limited[
 			<-l.queue
 		}), nil
 	case <-ctx.Done():
-		return limited[T](nil), ErrTimeout.Errorf("context cancelled before any simultaneous runner (of %d) became available", cap(l.queue))
+		timer.Stop()
+		return limited[T](nil), errors.Wrapf(ctx.Err(), "context cancelled before any simultaneous runner (of %d) became available", cap(l.queue))
 	case <-timer.C:
 		return limited[T](nil), ErrTimeout.Errorf("timeout (%s) expired before any simultaneous runner (of %d) became available", timeout, cap(l.queue))
 	}
