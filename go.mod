@@ -1,6 +1,6 @@
 module github.com/singlestore-labs/simultaneous
 
-go 1.20
+go 1.23
 
 require (
 	github.com/memsql/errors v0.2.0
